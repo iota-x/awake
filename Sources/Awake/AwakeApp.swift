@@ -306,7 +306,7 @@ struct PopoverView: View {
                     .disabled(settingUp)
                 }
             }
-            Text(lidMessage ?? "Keeps your MacBook awake with the lid shut, up to 4 hours. Use a hard, ventilated surface.")
+            Text(lidMessage ?? "Keeps your MacBook awake with the lid shut, up to 24 hours. Use a hard, ventilated surface.")
                 .font(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -415,7 +415,7 @@ struct SettingsView: View {
             if Machine.hasLid {
                 Section("Closed lid") {
                     Toggle("Keep running on battery", isOn: $lidOnBattery)
-                    Text("Closed-lid sessions stop after 4 hours, if the Mac runs hot, or by the battery rules above. Quitting Awake always lets the Mac sleep again.")
+                    Text("Closed-lid sessions stop after 24 hours, if the Mac runs hot, or by the battery rules above. Quitting Awake always lets the Mac sleep again.")
                         .font(.caption).foregroundStyle(.secondary)
                     HStack {
                         Text(s.helperInstalled ? "Helper installed" : "Helper not installed")

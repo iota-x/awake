@@ -9,11 +9,11 @@ import Foundation
 ///     /usr/bin/pmset -a disablesleep 0
 ///
 /// Nothing else. While it's on, a detached watchdog shell puts sleep back if
-/// Awake quits or crashes, and after a hard cap of a little over four hours —
+/// Awake quits or crashes, and after a hard cap of a little over 24 hours —
 /// so a Mac in a bag can never be left unable to sleep.
 enum ClosedLid {
     static let sudoersPath = "/etc/sudoers.d/awake-closed-lid"
-    static let maxHours = 4.0
+    static let maxHours = 24.0
 
     private static var support: URL {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]

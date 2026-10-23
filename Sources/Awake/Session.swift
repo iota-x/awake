@@ -42,6 +42,8 @@ final class Session: ObservableObject {
     }
     @Published var untilTime: Date = Calendar.current.date(byAdding: .hour, value: 2, to: .now)!
     @Published var closedLid = false
+    /// cached: checking means running sudo, which mustn't happen on every redraw
+    @Published private(set) var helperInstalled = false
 
     // what's running
     @Published private(set) var active = false
@@ -70,6 +72,11 @@ final class Session: ObservableObject {
         observers.append(NotificationCenter.default.addObserver(forName: ProcessInfo.thermalStateDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.check() }
         })
+        // a setting changed (here or in Settings): redraw, and apply the display option live
+        observers.append(NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.settingsChanged() }
+        })
+        refreshHelper()
         // keep power readings fresh for the popover even when idle
         ticker = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.tick() }
@@ -89,7 +96,7 @@ final class Session: ObservableObject {
     /// What's in the way of starting, or nil.
     var blocker: String? {
         if mode == .until, untilDate.timeIntervalSince(now) < 60 { return "Pick a time at least a minute away." }
-        if closedLid && !ClosedLid.isInstalled { return "Set up closed-lid mode first." }
+        if closedLid && !helperInstalled { return "Set up closed-lid mode first." }
         return powerProblem(closedLid: closedLid)
     }
 
@@ -165,6 +172,25 @@ final class Session: ObservableObject {
     func shutdown() {
         stop()
         ClosedLid.disengage()
+    }
+
+    func refreshHelper() {
+        Task.detached {
+            let installed = ClosedLid.isInstalled
+            await MainActor.run { if self.helperInstalled != installed { self.helperInstalled = installed } }
+        }
+    }
+
+    private func settingsChanged() {
+        objectWillChange.send()
+        guard active else { return }
+        let want = Pref.d.bool(forKey: Pref.keepDisplayOn)
+        if want && displayAssertion == nil {
+            displayAssertion = Assertion(type: Assertion.display, reason: "Awake session (display)")
+        } else if !want && displayAssertion != nil {
+            displayAssertion = nil
+        }
+        check()
     }
 
     // MARK: - rules

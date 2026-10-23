@@ -22,6 +22,14 @@ struct AwakeApp: App {
         }
         .menuBarExtraStyle(.window)
 
+        // the same panel as a window, for when the menu bar has no room for the icon
+        Window("Awake", id: AppDelegate.panelID) {
+            PopoverView(inPanel: true).environmentObject(session)
+        }
+        .windowResizability(.contentSize)
+        .windowStyle(.hiddenTitleBar)
+        .defaultLaunchBehavior(.suppressed)
+
         Settings {
             SettingsView().environmentObject(session)
         }
@@ -30,15 +38,16 @@ struct AwakeApp: App {
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     @MainActor static var session: Session?
-    @MainActor private static var panel: NSPanel?
+    static let panelID = "panel"
+    /// set by the menu bar label, which has SwiftUI's openWindow
+    @MainActor static var openPanel: (() -> Void)?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // a full menu bar (or the notch) can push the icon off-screen; then show the panel instead
         // macOS places the item first and only then pushes it off a full bar, so look a few times
         for delay in [1.5, 3.0, 6.0] {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
                 MainActor.assumeIsolated {
-                    if Self.panel?.isVisible != true && Self.menuBarIconHidden() { Self.showPanel() }
+                    if !Self.panelVisible && Self.menuBarIconHidden() { Self.showPanel() }
                 }
             }
         }
@@ -54,28 +63,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         MainActor.assumeIsolated { Self.session?.shutdown() }
     }
 
+    @MainActor static var panelWindow: NSWindow? {
+        NSApp.windows.first { $0.identifier?.rawValue.hasPrefix(panelID) == true }
+    }
+
+    @MainActor static var panelVisible: Bool { panelWindow?.isVisible == true }
+
     @MainActor static func showPanel() {
-        guard let session else { return }
-        if panel == nil {
-            let p = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 320, height: 420),
-                            styleMask: [.titled, .closable, .fullSizeContentView], backing: .buffered, defer: false)
-            p.title = "Awake"
-            p.titlebarAppearsTransparent = true
-            p.isReleasedWhenClosed = false
-            // panels hide when their app isn't frontmost, and a menu bar app rarely is
-            p.hidesOnDeactivate = false
-            // show on whichever Space is in front, full-screen ones included
-            p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-            p.contentView = NSHostingView(rootView: PopoverView(inPanel: true).environmentObject(session))
-            p.center()
-            panel = p
+        guard let openPanel else {
+            // the label hasn't appeared yet; try again shortly
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { MainActor.assumeIsolated { showPanel() } }
+            return
         }
-        // an accessory app launched in the background may not get activated;
-        // bring the panel up regardless, above other windows
-        panel?.level = .floating
-        panel?.orderFrontRegardless()
-        panel?.makeKey()
-        NSApp.activate()
+        openPanel()
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated {
+                guard let w = panelWindow else { return }
+                // an accessory app isn't frontmost; float the window on whichever Space is showing
+                w.level = .floating
+                w.collectionBehavior.formUnion([.canJoinAllSpaces, .fullScreenAuxiliary])
+                w.orderFrontRegardless()
+                w.makeKey()
+                NSApp.activate()
+            }
+        }
     }
 
     /// Whether macOS has hidden our menu bar item (off-screen when the bar is full).
@@ -95,14 +106,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 struct MenuBarLabel: View {
     @EnvironmentObject var session: Session
     @AppStorage(Pref.showTimeInMenuBar) private var showTime = true
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
-        if session.active {
-            Image(nsImage: Icon.active())
-            if showTime, let r = session.remaining { Text(Format.short(r)) }
-        } else {
-            Image(systemName: "cup.and.saucer")
+        Group {
+            if session.active {
+                Image(nsImage: Icon.active())
+                if showTime, let r = session.remaining { Text(Format.short(r)) }
+            } else {
+                Image(systemName: "cup.and.saucer")
+            }
         }
+        .onAppear { AppDelegate.openPanel = { openWindow(id: AppDelegate.panelID) } }
     }
 }
 
@@ -156,6 +171,7 @@ struct PopoverView: View {
         }
         .padding(16)
         .frame(width: 320)
+        .onAppear { s.refreshHelper() }
     }
 
     private var header: some View {
@@ -272,11 +288,12 @@ struct PopoverView: View {
             HStack {
                 Toggle("Closed-lid mode", isOn: $s.closedLid).toggleStyle(.checkbox)
                 Spacer()
-                if !ClosedLid.isInstalled {
+                if !s.helperInstalled {
                     Button(settingUp ? "Setting up…" : "Set up") {
                         settingUp = true
                         let error = ClosedLid.install()
                         settingUp = false
+                        s.refreshHelper()
                         lidMessage = error ?? "Ready. Turn on closed-lid mode and start a session."
                     }
                     .disabled(settingUp)
@@ -360,7 +377,6 @@ struct SettingsView: View {
     @AppStorage(Pref.closedLidOnBattery) private var lidOnBattery = false
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var loginError: String?
-    @State private var helperInstalled = ClosedLid.isInstalled
     @State private var helperMessage: String?
 
     var body: some View {
@@ -395,11 +411,11 @@ struct SettingsView: View {
                     Text("Closed-lid sessions stop after 4 hours, if the Mac runs hot, or by the battery rules above. Quitting Awake always lets the Mac sleep again.")
                         .font(.caption).foregroundStyle(.secondary)
                     HStack {
-                        Text(helperInstalled ? "Helper installed" : "Helper not installed")
+                        Text(s.helperInstalled ? "Helper installed" : "Helper not installed")
                         Spacer()
-                        Button(helperInstalled ? "Remove helper" : "Install helper") {
-                            helperMessage = helperInstalled ? ClosedLid.uninstall() : ClosedLid.install()
-                            helperInstalled = ClosedLid.isInstalled
+                        Button(s.helperInstalled ? "Remove helper" : "Install helper") {
+                            helperMessage = s.helperInstalled ? ClosedLid.uninstall() : ClosedLid.install()
+                            s.refreshHelper()
                         }
                         .disabled(s.lidEngaged)
                     }

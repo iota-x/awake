@@ -15,7 +15,7 @@ cat > .build/vfs/overlay.yaml <<YAML
 YAML
 VFS=(-vfsoverlay .build/vfs/overlay.yaml -Xcc -ivfsoverlay -Xcc .build/vfs/overlay.yaml)
 
-swiftc -O -parse-as-library -target arm64-apple-macosx14.0 -sdk "$SDK" "${VFS[@]}" \
+swiftc -O -parse-as-library -target arm64-apple-macosx15.0 -sdk "$SDK" "${VFS[@]}" \
   Sources/Awake/*.swift -framework IOKit -framework ServiceManagement -o .build/Awake
 
 APP=dist/Awake.app
@@ -25,7 +25,7 @@ cp .build/Awake "$APP/Contents/MacOS/Awake"
 
 # icon
 if [ ! -f .build/AppIcon.icns ]; then
-  swiftc -O -target arm64-apple-macosx14.0 -sdk "$SDK" "${VFS[@]}" tools/icon.swift -o .build/icon
+  swiftc -O -target arm64-apple-macosx15.0 -sdk "$SDK" "${VFS[@]}" tools/icon.swift -o .build/icon
   .build/icon .build/icon-1024.png
   ICONSET=.build/AppIcon.iconset; rm -rf "$ICONSET"; mkdir -p "$ICONSET"
   for s in 16 32 128 256 512; do
@@ -48,7 +48,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>1.0</string>
   <key>CFBundleVersion</key><string>1</string>
-  <key>LSMinimumSystemVersion</key><string>14.0</string>
+  <key>LSMinimumSystemVersion</key><string>15.0</string>
   <key>LSUIElement</key><true/>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSAppleEventsUsageDescription</key><string>Awake asks for your admin password once to set up closed-lid mode.</string>

@@ -43,11 +43,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @MainActor static var openPanel: (() -> Void)?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // macOS places the item first and only then pushes it off a full bar, so look a few times
+        // A hidden icon (full bar, or parked in Ice/Bartender's hidden section) gets the
+        // window once, so Awake isn't invisible on first run. After that, opening Awake
+        // from Spotlight is the way in — no window popping up at every login.
+        // macOS places the item first and only then moves it, so look a few times.
+        guard !UserDefaults.standard.bool(forKey: "shownHiddenIconWindow") else { return }
         for delay in [1.5, 3.0, 6.0] {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
                 MainActor.assumeIsolated {
-                    if !Self.panelVisible && Self.menuBarIconHidden() { Self.showPanel() }
+                    if !Self.panelVisible && Self.menuBarIconHidden() {
+                        UserDefaults.standard.set(true, forKey: "shownHiddenIconWindow")
+                        Self.showPanel()
+                    }
                 }
             }
         }
@@ -105,7 +112,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 /// green dot, and the time left beside it if that's switched on.
 struct MenuBarLabel: View {
     @EnvironmentObject var session: Session
-    @AppStorage(Pref.showTimeInMenuBar) private var showTime = true
+    @AppStorage(Pref.showTimeInMenuBar) private var showTime = false
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
@@ -160,7 +167,7 @@ struct PopoverView: View {
         VStack(alignment: .leading, spacing: 14) {
             header
             if inPanel && AppDelegate.menuBarIconHidden() {
-                Label("Your menu bar is full, so macOS is hiding Awake's cup. Hold ⌘ and drag other icons off the bar to make room — or just open Awake from Spotlight to get this window.",
+                Label("Awake's cup is hidden — the menu bar is full, or Ice has it in the hidden section. In Ice: Settings → Menu Bar Layout, drag the cup into Visible. Or just open Awake from Spotlight to get this window.",
                       systemImage: "menubar.rectangle")
                     .font(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -369,7 +376,7 @@ struct SettingsView: View {
     @EnvironmentObject var s: Session
     @AppStorage(Pref.requireAdapter) private var requireAdapter = true
     @AppStorage(Pref.keepDisplayOn) private var keepDisplayOn = false
-    @AppStorage(Pref.showTimeInMenuBar) private var showTime = true
+    @AppStorage(Pref.showTimeInMenuBar) private var showTime = false
     @AppStorage(Pref.batteryCutoffOn) private var cutoffOn = true
     @AppStorage(Pref.batteryCutoff) private var cutoff = 20
     @AppStorage(Pref.batteryLimitOn) private var limitOn = false

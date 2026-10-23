@@ -25,7 +25,7 @@ enum Pref {
             requireAdapter: true, keepDisplayOn: false,
             batteryCutoffOn: true, batteryCutoff: 20,
             batteryLimitOn: false, batteryLimitMinutes: 60,
-            closedLidOnBattery: false, showTimeInMenuBar: true,
+            closedLidOnBattery: false, showTimeInMenuBar: false,
             lastMinutes: 60,
         ])
     }

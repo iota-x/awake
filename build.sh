@@ -6,6 +6,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 SDK="$(xcrun --show-sdk-path)"
+VERSION="$(cat VERSION)"
 mkdir -p .build/vfs dist
 : > .build/vfs/empty.modulemap
 cat > .build/vfs/overlay.yaml <<YAML
@@ -15,8 +16,13 @@ cat > .build/vfs/overlay.yaml <<YAML
 YAML
 VFS=(-vfsoverlay .build/vfs/overlay.yaml -Xcc -ivfsoverlay -Xcc .build/vfs/overlay.yaml)
 
-swiftc -O -parse-as-library -target arm64-apple-macosx15.0 -sdk "$SDK" "${VFS[@]}" \
-  Sources/Awake/*.swift -framework IOKit -framework ServiceManagement -o .build/Awake
+# a universal binary, so it runs on Apple silicon and Intel Macs
+for ARCH in arm64 x86_64; do
+  swiftc -O -parse-as-library -target $ARCH-apple-macosx15.0 -sdk "$SDK" "${VFS[@]}" \
+    -module-cache-path .build/cache-$ARCH \
+    Sources/Awake/*.swift -framework IOKit -framework ServiceManagement -o .build/Awake-$ARCH
+done
+lipo -create .build/Awake-arm64 .build/Awake-x86_64 -output .build/Awake
 
 APP=dist/Awake.app
 rm -rf "$APP"
@@ -46,8 +52,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleExecutable</key><string>Awake</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>1.0</string>
-  <key>CFBundleVersion</key><string>1</string>
+  <key>CFBundleShortVersionString</key><string>${VERSION}</string>
+  <key>CFBundleVersion</key><string>${VERSION}</string>
   <key>LSMinimumSystemVersion</key><string>15.0</string>
   <key>LSUIElement</key><true/>
   <key>NSHighResolutionCapable</key><true/>
@@ -57,6 +63,16 @@ PLIST
 
 codesign --force --deep --sign - "$APP"
 echo "built $APP"
+
+if [ "${1:-}" = "--package" ]; then
+  # release assets: a zip and a drag-to-Applications disk image
+  rm -f "dist/Awake-$VERSION.zip" "dist/Awake-$VERSION.dmg"
+  ditto -c -k --keepParent "$APP" "dist/Awake-$VERSION.zip"
+  STAGE=.build/dmg; rm -rf "$STAGE"; mkdir -p "$STAGE"
+  cp -R "$APP" "$STAGE/"; ln -s /Applications "$STAGE/Applications"
+  hdiutil create -volname "Awake $VERSION" -srcfolder "$STAGE" -ov -format UDZO "dist/Awake-$VERSION.dmg" >/dev/null
+  echo "packaged dist/Awake-$VERSION.zip and dist/Awake-$VERSION.dmg"
+fi
 
 if [ "${1:-}" = "--install" ]; then
   osascript -e 'tell application "Awake" to quit' >/dev/null 2>&1 || true

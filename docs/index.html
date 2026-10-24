@@ -1,0 +1,812 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Awake: keep your Mac awake, free</title>
+<meta name="description" content="A free, open-source menu bar app that keeps your Mac awake: timed sessions, closed-lid mode for up to 24 hours, and battery and heat rules so it's safe to walk away.">
+<meta name="theme-color" content="#07060e">
+<meta property="og:title" content="Awake: keep your Mac awake, free">
+<meta property="og:description" content="Timed sessions, closed-lid mode and safety rules, from the menu bar. Free and open source.">
+<meta property="og:image" content="https://iota-x.github.io/awake/assets/awake-launch-poster.jpg">
+<meta property="og:url" content="https://iota-x.github.io/awake/">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" type="image/png" href="assets/favicon.png">
+<link rel="apple-touch-icon" href="assets/icon-512.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<!-- Only used where the system font isn't SF Pro (Windows, Linux, Android). -->
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root {
+  color-scheme: dark;
+  --sky:    #07060e;
+  --ink:    #f4f2fa;
+  --mist:   #9d98b3;
+  --dim:    #625d78;
+  --line:   rgba(255,255,255,.08);
+  --violet: #8d7cf8;
+  --rose:   #cf8aa6;
+  --amber:  #f3a55a;
+  --glow:   linear-gradient(92deg, var(--violet) 0%, var(--rose) 52%, var(--amber) 100%);
+
+  /* the app's own panel, taken from the launch film */
+  --panel:   #29282e;
+  --panel-2: #3a3940;
+  --panel-3: #46454d;
+  --blue:    #0a84ff;
+  --red:     #ff3b30;
+  --green:   #30d158;
+
+  --sans: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Inter Tight", system-ui, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, "JetBrains Mono", monospace;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 48px; }
+body {
+  margin: 0;
+  background: var(--sky);
+  color: var(--ink);
+  font: 400 17px/1.55 var(--sans);
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+#stars { position: fixed; inset: 0; width: 100%; height: 100%; z-index: -2; }
+.sky-glow {
+  position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background:
+    radial-gradient(60% 45% at 50% -8%, rgba(104, 84, 230, .26), transparent 70%),
+    radial-gradient(70% 40% at 50% 112%, rgba(243, 150, 80, .13), transparent 70%);
+}
+a { color: inherit; }
+:focus-visible { outline: 2px solid var(--violet); outline-offset: 3px; border-radius: 6px; }
+.wrap { width: min(1080px, 100% - 32px); margin-inline: auto; }
+.glow-text {
+  background: var(--glow);
+  -webkit-background-clip: text; background-clip: text;
+  color: transparent;
+}
+
+/* ── menu bar ─────────────────────────────────────────────── */
+.menubar {
+  position: sticky; top: 0; z-index: 20;
+  height: 30px;
+  display: flex; align-items: center; gap: 18px;
+  padding: 0 14px;
+  font-size: 13.5px;
+  background: rgba(16, 14, 28, .62);
+  -webkit-backdrop-filter: saturate(160%) blur(18px);
+  backdrop-filter: saturate(160%) blur(18px);
+  border-bottom: 1px solid var(--line);
+}
+.menubar .app { display: flex; align-items: center; gap: 7px; font-weight: 700; text-decoration: none; }
+.menubar .app img { width: 16px; height: 16px; border-radius: 4px; }
+.menubar nav { display: flex; gap: 16px; }
+.menubar nav a { text-decoration: none; color: rgba(244,242,250,.86); }
+.menubar nav a:hover { color: var(--ink); }
+.menubar .extras { margin-left: auto; display: flex; align-items: center; gap: 14px; font-variant-numeric: tabular-nums; }
+.cup-btn {
+  position: relative;
+  display: grid; place-items: center;
+  width: 30px; height: 22px;
+  border: 0; border-radius: 5px; padding: 0;
+  background: transparent; color: var(--ink); cursor: pointer;
+}
+.cup-btn:hover, .cup-btn[aria-expanded="true"] { background: rgba(255,255,255,.16); }
+.cup-btn svg { width: 18px; height: 18px; }
+.cup-btn .dot {
+  position: absolute; top: 2px; right: 5px;
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--green); box-shadow: 0 0 0 1.5px rgba(16,14,28,.9);
+  opacity: 0; transform: scale(.4); transition: .25s;
+}
+.awake-on .cup-btn .dot { opacity: 1; transform: none; }
+#bar-left:empty { display: none; }
+
+/* ── hero ─────────────────────────────────────────────────── */
+.hero { text-align: center; padding: clamp(72px, 13vh, 140px) 0 56px; }
+.hero .icon-wrap { position: relative; width: 132px; margin: 0 auto 26px; }
+.hero .icon-wrap::before {
+  content: ""; position: absolute; inset: -70px; z-index: -1;
+  background: radial-gradient(closest-side, rgba(141,124,248,.45), rgba(243,165,90,.18) 55%, transparent);
+  filter: blur(8px);
+}
+.hero .icon-wrap img { width: 132px; height: 132px; display: block; filter: drop-shadow(0 18px 40px rgba(0,0,0,.5)); }
+.hero h1 {
+  margin: 0;
+  font-size: clamp(64px, 13vw, 148px);
+  font-weight: 800; letter-spacing: -.05em; line-height: .92;
+}
+.hero .tagline { margin: 18px 0 0; font-size: clamp(20px, 2.6vw, 26px); font-weight: 600; letter-spacing: -.02em; }
+.hero .tagline span { color: var(--mist); font-weight: 500; }
+.ctas { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; margin-top: 34px; }
+.btn {
+  display: inline-flex; align-items: center; gap: 9px;
+  height: 48px; padding: 0 22px;
+  border-radius: 999px;
+  font: 600 16px/1 var(--sans); letter-spacing: -.01em;
+  text-decoration: none; cursor: pointer; border: 0;
+}
+.btn svg { width: 18px; height: 18px; flex: none; }
+.btn-primary { background: var(--ink); color: #121019; }
+.btn-primary:hover { background: #fff; }
+.btn-quiet { background: rgba(255,255,255,.07); color: var(--ink); box-shadow: inset 0 0 0 1px var(--line); }
+.btn-quiet:hover { background: rgba(255,255,255,.12); }
+.meta { margin: 16px 0 0; color: var(--dim); font-size: 14px; }
+
+.film { margin: clamp(48px, 8vw, 88px) auto 0; width: min(960px, 100%); }
+.film video {
+  display: block; width: 100%; aspect-ratio: 16 / 9;
+  border-radius: 18px; background: #000;
+  box-shadow: 0 0 0 1px var(--line), 0 40px 120px -30px rgba(104, 84, 230, .45);
+}
+.film figcaption { margin-top: 12px; color: var(--dim); font-size: 14px; }
+
+/* ── scenes ───────────────────────────────────────────────── */
+.scene { padding: clamp(96px, 15vw, 170px) 0 0; }
+.scene h2 {
+  margin: 0;
+  font-size: clamp(42px, 7vw, 82px);
+  font-weight: 800; letter-spacing: -.045em; line-height: .98;
+}
+.scene .lead { margin: 18px 0 0; color: var(--mist); font-size: clamp(17px, 2vw, 20px); max-width: 34em; }
+.center { text-align: center; }
+.center .lead { margin-inline: auto; }
+
+/* story */
+.chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-top: 26px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 8px 15px; border-radius: 999px;
+  background: rgba(255,255,255,.06); box-shadow: inset 0 0 0 1px var(--line);
+  font-size: 15px; font-weight: 500; color: rgba(244,242,250,.9);
+}
+.chip svg { width: 15px; height: 15px; color: var(--mist); }
+.prices { display: flex; flex-wrap: wrap; justify-content: center; gap: 14px; margin: 64px 0 0; }
+.price {
+  width: 150px; padding: 16px 18px 14px; border-radius: 16px; text-align: left;
+  background: rgba(255,255,255,.04); box-shadow: inset 0 0 0 1px var(--line);
+}
+.price b {
+  display: block; position: relative; width: fit-content;
+  font-size: 40px; font-weight: 800; letter-spacing: -.04em; color: rgba(244,242,250,.42);
+}
+.price b::after {
+  content: ""; position: absolute; left: -4px; right: -4px; top: 52%;
+  height: 3px; border-radius: 2px; background: rgba(244,242,250,.7);
+}
+.price small { color: var(--dim); font-size: 13px; }
+.story-q { margin: 22px 0 0; color: var(--mist); font-size: 19px; }
+.scene .built { margin-top: clamp(72px, 10vw, 120px); }
+
+/* demo */
+.demo { display: grid; grid-template-columns: 1fr 360px; gap: clamp(32px, 6vw, 88px); align-items: center; }
+.modes { list-style: none; margin: 34px 0 0; padding: 0; display: grid; gap: 4px; }
+.modes li { padding: 14px 0; border-top: 1px solid var(--line); }
+.modes li:last-child { border-bottom: 1px solid var(--line); }
+.modes b { font-weight: 650; }
+.modes span { display: block; color: var(--mist); font-size: 15.5px; }
+.try { margin: 20px 0 0; color: var(--dim); font-size: 14.5px; }
+
+/* the panel, as the app draws it */
+.panel {
+  width: 100%; max-width: 360px; justify-self: center;
+  padding: 18px 18px 14px;
+  border-radius: 22px;
+  background: var(--panel);
+  box-shadow: 0 0 0 1px rgba(255,255,255,.1), 0 30px 80px -20px rgba(0,0,0,.8), 0 0 120px -40px rgba(141,124,248,.5);
+  font-size: 14px; line-height: 1.35;
+}
+.p-head { display: flex; gap: 12px; align-items: center; margin-bottom: 16px; }
+.p-head svg { width: 30px; height: 30px; color: var(--mist); flex: none; transition: color .2s; }
+.awake-on .p-head svg { color: var(--blue); }
+.p-head b { display: block; font-size: 16px; }
+.p-head span { color: var(--mist); font-size: 13.5px; font-variant-numeric: tabular-nums; }
+.seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; padding: 2px; border-radius: 9px; background: var(--panel-2); }
+.seg button {
+  height: 30px; border: 0; border-radius: 7px;
+  background: transparent; color: var(--ink); font: 500 13.5px var(--sans); cursor: pointer;
+}
+.seg button[aria-selected="true"] { background: var(--panel-3); box-shadow: 0 1px 2px rgba(0,0,0,.35); }
+.mode { margin-top: 12px; }
+.mode[hidden] { display: none; }
+.presets { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; }
+.presets button {
+  height: 32px; border: 0; border-radius: 8px;
+  background: var(--panel-2); color: var(--ink); font: 500 13.5px var(--sans); cursor: pointer;
+}
+.presets button:hover { background: var(--panel-3); }
+.presets button[aria-pressed="true"] { background: var(--blue); color: #fff; }
+.amount { display: flex; align-items: center; justify-content: space-between; margin: 12px 0 6px; font-variant-numeric: tabular-nums; }
+.stepper { display: flex; border-radius: 7px; overflow: hidden; background: var(--panel-2); }
+.stepper button { width: 30px; height: 26px; border: 0; background: transparent; color: var(--ink); font: 500 16px var(--sans); cursor: pointer; }
+.stepper button + button { box-shadow: -1px 0 0 rgba(255,255,255,.08); }
+.stepper button:hover { background: var(--panel-3); }
+input[type=range] { width: 100%; accent-color: var(--blue); margin: 4px 0 0; }
+.until-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.until-row input {
+  background: var(--panel-2); color: var(--ink); border: 0; border-radius: 7px;
+  padding: 6px 9px; font: 500 15px var(--sans); color-scheme: dark;
+}
+.hint { margin: 8px 0 0; color: var(--dim); font-size: 12.5px; }
+.err { color: #ff8a80; }
+.unl { padding: 14px 0 6px; color: var(--mist); }
+.checks { margin-top: 12px; display: grid; gap: 8px; }
+.check { display: flex; gap: 9px; align-items: flex-start; cursor: pointer; }
+.check input { margin: 2px 0 0; accent-color: var(--blue); width: 15px; height: 15px; }
+.check.boxed { padding: 10px; border-radius: 10px; background: rgba(255,255,255,.04); }
+.check small { display: block; color: var(--dim); font-size: 12.5px; }
+.start {
+  width: 100%; height: 36px; margin-top: 14px;
+  border: 0; border-radius: 9px; background: var(--blue); color: #fff;
+  font: 600 14.5px var(--sans); cursor: pointer;
+}
+.start:hover { filter: brightness(1.1); }
+.running[hidden], .idle[hidden] { display: none; }
+.clock {
+  margin: 4px 0 12px; text-align: center;
+  font-size: 64px; font-weight: 700; letter-spacing: -.03em; line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.power { color: var(--mist); font-size: 13.5px; }
+.run-btns { display: flex; gap: 8px; margin-top: 12px; }
+.run-btns button { height: 38px; border: 0; border-radius: 9px; font: 600 15px var(--sans); cursor: pointer; color: #fff; }
+.plus { width: 96px; background: var(--panel-2); }
+.plus:hover { background: var(--panel-3); }
+.stop { flex: 1; background: var(--red); }
+.stop:hover { filter: brightness(1.08); }
+.p-foot { display: flex; justify-content: space-between; margin-top: 14px; color: var(--mist); font-size: 13.5px; }
+.p-foot a { text-decoration: none; }
+.p-foot a:hover { color: var(--ink); }
+.p-foot button { background: none; border: 0; padding: 0; color: inherit; font: inherit; cursor: pointer; }
+.p-foot button:hover { color: var(--ink); }
+
+/* agents */
+.terms { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 48px; text-align: left; }
+.term {
+  border-radius: 12px; overflow: hidden;
+  background: #121019; box-shadow: inset 0 0 0 1px rgba(255,255,255,.09);
+  font: 12.5px/1.7 var(--mono);
+  transition: opacity .4s, filter .4s;
+}
+.term header { display: flex; align-items: center; gap: 6px; padding: 9px 12px; border-bottom: 1px solid var(--line); color: var(--mist); }
+.term header i { width: 9px; height: 9px; border-radius: 50%; background: #ff5f57; }
+.term header i:nth-child(2) { background: #febc2e; }
+.term header i:nth-child(3) { background: #28c840; margin-right: 6px; }
+.term pre { margin: 0; padding: 12px 14px 4px; min-height: 132px; white-space: pre-wrap; color: #c9c5da; font: inherit; }
+.term pre .ok { color: #7ee2a0; }
+.term pre .muted { color: var(--dim); }
+.term .cursor { display: inline-block; width: 7px; height: 13px; vertical-align: -2px; background: #c9c5da; }
+.awake-on .term .cursor { animation: blink 1s steps(1) infinite; }
+.term footer { display: flex; justify-content: space-between; padding: 6px 14px 12px; color: var(--dim); font-size: 11.5px; }
+.bar { height: 3px; margin: 6px 14px 0; border-radius: 2px; background: rgba(255,255,255,.08); overflow: hidden; }
+.bar i { display: block; height: 100%; width: var(--p, 30%); background: var(--violet); border-radius: 2px; }
+.awake-on .bar i { animation: work 9s ease-in-out infinite alternate; }
+.term .state::before { content: "● "; }
+.term .state { color: var(--green); }
+body:not(.awake-on) .term { opacity: .5; filter: saturate(.3); }
+body:not(.awake-on) .term .state { color: var(--dim); }
+.status { display: flex; justify-content: center; margin-top: 22px; }
+.pill {
+  display: inline-flex; align-items: center; gap: 10px;
+  padding: 7px 8px 7px 14px; border-radius: 999px;
+  background: rgba(255,255,255,.06); box-shadow: inset 0 0 0 1px var(--line);
+  font-size: 15px;
+}
+.pill .led { width: 8px; height: 8px; border-radius: 50%; background: var(--dim); }
+.awake-on .pill .led { background: var(--green); box-shadow: 0 0 10px var(--green); }
+.pill button {
+  height: 30px; padding: 0 14px; border: 0; border-radius: 999px;
+  background: var(--ink); color: #121019; font: 600 14px var(--sans); cursor: pointer;
+  white-space: nowrap; flex: none;
+}
+.awake-on .pill button { background: rgba(255,255,255,.1); color: var(--ink); }
+@keyframes blink { 50% { opacity: 0; } }
+@keyframes work { from { width: var(--p, 30%); } to { width: calc(var(--p, 30%) + 38%); } }
+
+/* lid */
+.lid { margin-top: clamp(96px, 12vw, 140px); }
+.laptop { display: block; width: min(420px, 80%); margin: 0 auto; }
+.night {
+  position: relative; margin: 34px auto 0; max-width: 760px;
+  display: grid; grid-template-columns: repeat(4, 1fr);
+  padding-top: 26px;
+}
+.night::before {
+  content: ""; position: absolute; top: 7px; left: 12.5%; right: 12.5%; height: 2px;
+  background: var(--glow); border-radius: 2px; opacity: .8;
+}
+.night li { list-style: none; position: relative; text-align: center; font-size: 14px; color: var(--mist); }
+.night li::before {
+  content: ""; position: absolute; top: -24px; left: 50%; margin-left: -6px;
+  width: 12px; height: 12px; border-radius: 50%;
+  background: var(--sky); box-shadow: inset 0 0 0 2px var(--rose);
+}
+.night li:first-child::before { box-shadow: inset 0 0 0 2px var(--violet); }
+.night li:last-child::before { background: var(--amber); box-shadow: none; }
+.night time { display: block; color: var(--ink); font-weight: 650; font-size: 16px; font-variant-numeric: tabular-nums; }
+.night ol { margin: 0; padding: 0; display: contents; }
+
+/* safety */
+.rules { display: grid; grid-template-columns: repeat(2, 1fr); margin-top: 52px; border-top: 1px solid var(--line); }
+.rules div { padding: 26px 28px 26px 0; border-bottom: 1px solid var(--line); }
+.rules div:nth-child(odd) { border-right: 1px solid var(--line); }
+.rules div:nth-child(even) { padding-left: 28px; }
+.rules h3 { display: flex; gap: 10px; align-items: center; margin: 0 0 6px; font-size: 19px; letter-spacing: -.015em; }
+.rules h3 svg { width: 19px; height: 19px; color: var(--amber); flex: none; }
+.rules p { margin: 0; color: var(--mist); font-size: 15.5px; }
+.fine { margin: 24px 0 0; color: var(--mist); font-size: 15.5px; max-width: 46em; }
+
+/* install */
+.steps { list-style: none; counter-reset: s; margin: 44px 0 0; padding: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 32px; }
+.steps li { counter-increment: s; min-width: 0; }
+.steps li::before {
+  content: counter(s);
+  display: grid; place-items: center; width: 34px; height: 34px; margin-bottom: 14px;
+  border-radius: 50%; box-shadow: inset 0 0 0 1.5px var(--line);
+  font-weight: 700; color: var(--mist);
+}
+.steps h3 { margin: 0 0 6px; font-size: 19px; letter-spacing: -.015em; }
+.steps p { margin: 0; color: var(--mist); font-size: 15.5px; }
+.steps a { color: var(--ink); }
+.cmd {
+  display: flex; align-items: center; gap: 10px; margin-top: 12px;
+  padding: 9px 9px 9px 14px; border-radius: 10px;
+  background: #121019; box-shadow: inset 0 0 0 1px var(--line);
+}
+.cmd code { flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap; font: 12.5px var(--mono); color: #c9c5da; }
+.cmd button {
+  flex: none; height: 28px; padding: 0 11px; border: 0; border-radius: 7px;
+  background: rgba(255,255,255,.09); color: var(--ink); font: 500 13px var(--sans); cursor: pointer;
+}
+
+/* finale */
+.versus { display: flex; justify-content: center; align-items: center; gap: clamp(24px, 6vw, 72px); }
+.versus div { display: grid; justify-items: center; }
+.versus small { font-size: 17px; color: var(--mist); font-weight: 500; }
+.versus .num { font-size: clamp(88px, 17vw, 180px); font-weight: 800; letter-spacing: -.05em; line-height: 1; }
+.versus .was { position: relative; color: rgba(244,242,250,.32); }
+.versus .was::after { content: ""; position: absolute; left: -6px; right: -6px; top: 50%; height: 6px; border-radius: 3px; background: rgba(244,242,250,.6); }
+.versus .vs { color: var(--dim); font-size: 20px; }
+.scene.finale h2 { margin-top: 26px; }
+footer.site { padding: 120px 0 48px; text-align: center; color: var(--dim); font-size: 14px; }
+footer.site a { color: var(--mist); }
+
+/* one entrance, on load */
+@media (prefers-reduced-motion: no-preference) {
+  .hero .icon-wrap { animation: rise .9s cubic-bezier(.2,.7,.2,1) both; }
+  .hero h1        { animation: rise .9s .12s cubic-bezier(.2,.7,.2,1) both; }
+  .hero .tagline, .hero .ctas, .hero .meta { animation: rise .9s .24s cubic-bezier(.2,.7,.2,1) both; }
+  @keyframes rise { from { opacity: 0; transform: translateY(18px); } }
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .awake-on .term .cursor, .awake-on .bar i { animation: none; }
+}
+
+@media (max-width: 860px) {
+  .demo { grid-template-columns: minmax(0, 1fr); }
+  .terms { grid-template-columns: minmax(0, 1fr); }
+  .term pre { min-height: 0; }
+  .steps { grid-template-columns: minmax(0, 1fr); gap: 28px; }
+  .rules { grid-template-columns: 1fr; }
+  .rules div, .rules div:nth-child(even) { padding: 22px 0; border-right: 0; }
+  .rules div:nth-child(odd) { border-right: 0; }
+}
+@media (max-width: 560px) {
+  .menubar nav { display: none; }
+  #bar-date { display: none; }
+  .night { grid-template-columns: repeat(2, 1fr); row-gap: 40px; }
+  .night::before { display: none; }
+  .versus .vs { font-size: 16px; }
+  .pill { font-size: 14px; text-align: left; }
+}
+</style>
+</head>
+<body>
+<canvas id="stars" aria-hidden="true"></canvas>
+<div class="sky-glow" aria-hidden="true"></div>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="cup" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M4 8h12v5.5a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5V8Zm12 1.5h1.5a2.5 2.5 0 0 1 0 5H16M3 21h15"/></symbol>
+  <symbol id="cup-fill" viewBox="0 0 24 24"><path fill="currentColor" d="M3.5 7.2h13v6.3a5.6 5.6 0 0 1-5.6 5.6H9.1a5.6 5.6 0 0 1-5.6-5.6V7.2Z"/><path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" d="M16.4 9.4h1.4a2.6 2.6 0 0 1 0 5.2h-1.6M2.8 21.4h15"/></symbol>
+  <symbol id="down" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 20h14"/></symbol>
+  <symbol id="code" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="m8 7-5 5 5 5m8-10 5 5-5 5"/></symbol>
+</svg>
+
+<header class="menubar" id="top">
+  <a class="app" href="#top"><img src="assets/favicon.png" alt="">Awake</a>
+  <nav aria-label="Sections">
+    <a href="#try">Try it</a>
+    <a href="#safety">Safety</a>
+    <a href="#install">Install</a>
+    <a href="https://github.com/iota-x/awake">GitHub</a>
+  </nav>
+  <div class="extras">
+    <button class="cup-btn" id="bar-cup" aria-label="Awake demo panel" aria-expanded="false" aria-controls="try">
+      <svg><use href="#cup"/></svg><span class="dot"></span>
+    </button>
+    <span id="bar-left"></span>
+    <span id="bar-date"></span>
+    <span id="bar-time"></span>
+  </div>
+</header>
+
+<main>
+  <section class="hero wrap">
+    <div class="icon-wrap"><img src="assets/icon-512.png" alt="Awake app icon: a cup on a violet-to-amber background"></div>
+    <h1>Awake</h1>
+    <p class="tagline">Your Mac and your agents, awake. <span>Free.</span></p>
+    <div class="ctas">
+      <a class="btn btn-primary" data-download href="https://github.com/iota-x/awake/releases/download/v1.0.0/Awake-1.0.0.dmg">
+        <svg><use href="#down"/></svg>Download for Mac
+      </a>
+      <a class="btn btn-quiet" href="https://github.com/iota-x/awake"><svg><use href="#code"/></svg>Source on GitHub</a>
+    </div>
+    <p class="meta"><span data-version>Version 1.0.0</span>, macOS 15 or later, Apple silicon and Intel, MIT licence</p>
+
+    <figure class="film">
+      <video controls preload="none" playsinline poster="assets/awake-launch-poster.jpg">
+        <source src="assets/awake-launch.mp4" type="video/mp4">
+      </video>
+      <figcaption>The one-minute version, with sound.</figcaption>
+    </figure>
+  </section>
+
+  <section class="scene wrap center">
+    <h2>Your Mac keeps falling asleep.</h2>
+    <div class="chips">
+      <span class="chip"><svg><use href="#down"/></svg>Mid-download</span>
+      <span class="chip"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="13" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="m10 9 5 2.5-5 2.5Z" fill="currentColor"/></svg>Mid-render</span>
+      <span class="chip"><svg viewBox="0 0 24 24"><rect x="2.5" y="6" width="13" height="12" rx="2.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="m15.5 10.5 6-3.5v10l-6-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>Mid-call</span>
+    </div>
+    <div class="prices" aria-label="What other keep-awake apps charge">
+      <div class="price"><b>$4.99</b><small>one-time</small></div>
+      <div class="price"><b>$9</b><small>early bird</small></div>
+      <div class="price"><b>$7.99</b><small>per Mac</small></div>
+    </div>
+    <p class="story-q">Other apps sell the fix. To keep a Mac awake.</p>
+    <h2 class="built">So I built <span class="glow-text">my own.</span></h2>
+  </section>
+
+  <section class="scene wrap" id="try">
+    <div class="demo">
+      <div>
+        <h2>Start.<br>That's the whole setup.</h2>
+        <ul class="modes">
+          <li><b>Timer</b><span>One minute to 24 hours, with presets, and +15 min while it runs.</span></li>
+          <li><b>Until</b><span>Stay awake until a clock time, any time in the next 24 hours.</span></li>
+          <li><b>Unlimited</b><span>Awake until you stop it.</span></li>
+        </ul>
+        <p class="try">This panel works. Start a session and watch the menu bar.</p>
+      </div>
+
+      <div class="panel" id="panel" aria-label="Awake panel demo">
+        <div class="p-head">
+          <svg><use href="#cup-fill"/></svg>
+          <div><b>Awake</b><span id="p-sub" aria-live="polite">Your Mac sleeps normally.</span></div>
+        </div>
+
+        <div class="idle" id="idle">
+          <div class="seg" role="tablist" aria-label="Mode">
+            <button role="tab" aria-selected="true" data-mode="timer">Timer</button>
+            <button role="tab" aria-selected="false" data-mode="until">Until</button>
+            <button role="tab" aria-selected="false" data-mode="unlimited">Unlimited</button>
+          </div>
+
+          <div class="mode" data-for="timer">
+            <div class="presets">
+              <button data-min="15">15 min</button><button data-min="30" aria-pressed="true">30 min</button><button data-min="60">1 h</button>
+              <button data-min="120">2 h</button><button data-min="240">4 h</button><button data-min="480">8 h</button>
+            </div>
+            <div class="amount">
+              <span id="amount">30 min</span>
+              <span class="stepper"><button id="minus" aria-label="Less time">−</button><button id="plus" aria-label="More time">+</button></span>
+            </div>
+            <input type="range" id="range" min="1" max="1440" value="30" aria-label="Minutes">
+          </div>
+
+          <div class="mode" data-for="until" hidden>
+            <label class="until-row">Stay awake until <input type="time" id="until"></label>
+            <p class="hint" id="until-hint">The next time the clock shows this, within 24 hours</p>
+          </div>
+
+          <div class="mode" data-for="unlimited" hidden>
+            <p class="unl">Awake until you stop it.</p>
+          </div>
+
+          <div class="checks">
+            <label class="check"><input type="checkbox" id="display"><span>Keep the display on too</span></label>
+            <label class="check boxed"><input type="checkbox" id="lid"><span>Closed-lid mode<small>Keep your MacBook awake with the lid shut, up to 24 hours.</small></span></label>
+          </div>
+          <button class="start" id="start">Start session</button>
+        </div>
+
+        <div class="running" id="running" hidden>
+          <div class="clock" id="clock">1:00:00</div>
+          <div class="power">🔌 Charging · 100%</div>
+          <div class="run-btns">
+            <button class="plus" id="more">+15 min</button>
+            <button class="stop" id="stop">Stop</button>
+          </div>
+        </div>
+
+        <div class="p-foot"><a href="#safety">Settings…</a><button id="quit">Quit</button></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="scene wrap center" id="agents">
+    <h2>Let your agents work.</h2>
+    <p class="lead">Every workspace, all at once. A sleeping Mac stops all of them mid-task.</p>
+    <div class="terms">
+      <article class="term">
+        <header><i></i><i></i><i></i>~/api-server</header>
+        <pre><span class="muted">agent · refactor auth</span>
+→ reading src/auth/
+<span class="ok">✓ mapped 41 files</span>
+→ rewriting session store
+<span class="ok">✓ 214 / 214 passing</span>
+→ opening pull request <span class="cursor"></span></pre>
+        <div class="bar" style="--p:52%"><i></i></div>
+        <footer><span class="state">working</span><span>0h 08m</span></footer>
+      </article>
+      <article class="term">
+        <header><i></i><i></i><i></i>~/web-app</header>
+        <pre><span class="muted">agent · upgrade to Next 16</span>
+→ upgrading next
+<span class="ok">✓ 38 routes migrated</span>
+→ fixing 12 type errors
+→ running lighthouse <span class="cursor"></span></pre>
+        <div class="bar" style="--p:36%"><i></i></div>
+        <footer><span class="state">working</span><span>0h 07m</span></footer>
+      </article>
+      <article class="term">
+        <header><i></i><i></i><i></i>~/data-pipeline</header>
+        <pre><span class="muted">agent · backfill events</span>
+→ backfilling events
+<span class="ok">✓ batch 6 / 20</span>
+→ re-indexing tables
+→ validating counts <span class="cursor"></span></pre>
+        <div class="bar" style="--p:24%"><i></i></div>
+        <footer><span class="state">working</span><span>0h 07m</span></footer>
+      </article>
+    </div>
+    <div class="status">
+      <span class="pill"><span class="led"></span><span id="pill-text">Awake is off. Your Mac can sleep mid-task.</span><button id="pill-btn">Turn Awake on</button></span>
+    </div>
+
+    <div class="lid">
+      <h2>Close the lid.<br><span class="glow-text">They keep working.</span></h2>
+      <svg class="laptop" viewBox="0 0 420 60" role="img" aria-label="A closed MacBook">
+        <defs>
+          <linearGradient id="lidg" x1="0" x2="1"><stop offset="0" stop-color="#8d7cf8"/><stop offset=".5" stop-color="#cf8aa6"/><stop offset="1" stop-color="#f3a55a"/></linearGradient>
+          <radialGradient id="pool" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#30d158" stop-opacity=".35"/><stop offset="1" stop-color="#30d158" stop-opacity="0"/></radialGradient>
+        </defs>
+        <ellipse cx="210" cy="44" rx="200" ry="14" fill="url(#pool)"/>
+        <path d="M40 30h340l-12 12H52Z" fill="#2c2a33"/>
+        <path d="M40 30h340" stroke="url(#lidg)" stroke-width="2"/>
+        <rect x="186" y="36" width="48" height="3" rx="1.5" fill="#1b1a21"/>
+        <circle cx="210" cy="24" r="3.5" fill="#30d158"/>
+      </svg>
+      <ol class="night" aria-label="One night with the lid closed">
+        <li><time>12:05 AM</time>Lid closed</li>
+        <li><time>2:14 AM</time>api-server done</li>
+        <li><time>4:40 AM</time>web-app done</li>
+        <li><time>6:57 AM</time>All done</li>
+      </ol>
+    </div>
+  </section>
+
+  <section class="scene wrap" id="safety">
+    <h2>Safe to walk away.</h2>
+    <p class="lead">A closed MacBook in a bag shouldn't stay awake. These rules stop the session for you.</p>
+    <div class="rules">
+      <div>
+        <h3><svg viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M9 3v5m6-5v5M6 8h12v3a6 6 0 0 1-12 0V8Zm6 9v4"/></svg>Needs the charger</h3>
+        <p>Sessions need a power adapter by default. One click allows battery when you want it.</p>
+      </div>
+      <div>
+        <h3><svg viewBox="0 0 24 24"><rect x="2.5" y="7" width="17" height="10" rx="2.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M22 10.5v3M6 10.5v3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>Stops at your battery limit</h3>
+        <p>On battery, it ends at the level you choose, or after a time limit you set.</p>
+      </div>
+      <div>
+        <h3><svg viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M10 13.5V5a2 2 0 1 1 4 0v8.5a4 4 0 1 1-4 0Z"/></svg>Stops if the Mac runs hot</h3>
+        <p>If macOS reports the Mac is getting hot, the session ends before it becomes a problem.</p>
+      </div>
+      <div>
+        <h3><svg viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5Z"/></svg>Choosing Sleep always wins</h3>
+        <p>Pick Sleep from the Apple menu and your Mac sleeps. Awake never argues with you.</p>
+      </div>
+    </div>
+    <p class="fine">Closed-lid mode lasts up to 24 hours, and you get a notification if a rule ends it. If Awake quits or crashes, a small watchdog turns sleep back on. Setting it up asks for your password once, to allow exactly two <code>pmset</code> commands. <a href="https://github.com/iota-x/awake#closed-lid-mode">How closed-lid mode works</a></p>
+  </section>
+
+  <section class="scene wrap" id="install">
+    <h2>Install in a minute.</h2>
+    <ol class="steps">
+      <li>
+        <h3>Download</h3>
+        <p>Get <a data-download data-dmg-name href="https://github.com/iota-x/awake/releases/download/v1.0.0/Awake-1.0.0.dmg">Awake-1.0.0.dmg</a>. Prefer a zip? It's on the <a href="https://github.com/iota-x/awake/releases/latest">releases page</a>.</p>
+      </li>
+      <li>
+        <h3>Drag to Applications</h3>
+        <p>Open the disk image and drag Awake into Applications. It lives in the menu bar, with no Dock icon.</p>
+      </li>
+      <li>
+        <h3>Open it, once</h3>
+        <p>Awake isn't signed with a paid Apple developer ID, so the first launch is blocked. Go to System Settings, then Privacy &amp; Security, and click Open Anyway. Or run this in Terminal:</p>
+        <div class="cmd"><code id="cmd">xattr -dr com.apple.quarantine /Applications/Awake.app</code><button id="copy">Copy</button></div>
+      </li>
+    </ol>
+  </section>
+
+  <section class="scene wrap center finale">
+    <div class="versus">
+      <div><small>Other apps</small><span class="num was">$9</span></div>
+      <span class="vs">vs</span>
+      <div><small>Awake</small><span class="num glow-text">$0</span></div>
+    </div>
+    <h2>Free. Forever. Open source.</h2>
+    <div class="ctas">
+      <a class="btn btn-primary" data-download href="https://github.com/iota-x/awake/releases/download/v1.0.0/Awake-1.0.0.dmg"><svg><use href="#down"/></svg>Download free</a>
+    </div>
+    <p class="meta"><a href="https://github.com/iota-x/awake">github.com/iota-x/awake</a></p>
+  </section>
+</main>
+
+<footer class="site wrap">
+  Made by <a href="https://github.com/iota-x">Ankit Pandey</a>. Awake is MIT licensed. Not affiliated with Apple.
+</footer>
+
+<script>
+(() => {
+  const $ = s => document.querySelector(s);
+  const body = document.body;
+
+  /* ── stars: drawn once, seeded so they don't jump on resize ── */
+  const cv = $('#stars'), cx = cv.getContext('2d');
+  function stars() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const w = innerWidth, h = innerHeight;
+    cv.width = w * dpr; cv.height = h * dpr;
+    cx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    let seed = 7;
+    const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    const n = Math.round(w * h / 5200);
+    for (let i = 0; i < n; i++) {
+      const r = rnd() < .92 ? .55 : 1.1;
+      cx.globalAlpha = .25 + rnd() * .6;
+      cx.fillStyle = '#fff';
+      cx.beginPath(); cx.arc(rnd() * w, rnd() * h, r, 0, 7); cx.fill();
+    }
+  }
+  stars();
+  let rt; addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(stars, 150); });
+
+  /* ── menu bar clock ── */
+  function clockTick() {
+    const d = new Date();
+    $('#bar-date').textContent = d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
+    $('#bar-time').textContent = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  }
+
+  /* ── the panel demo ── */
+  let mode = 'timer', minutes = 30, endsAt = null, running = false;
+
+  const fmtDur = m => m < 60 ? `${m} min` : (m % 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m / 60} h`);
+  const fmtClock = ms => {
+    const s = Math.max(0, Math.round(ms / 1000));
+    const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60;
+    return `${h}:${String(m).padStart(2, '0')}:${String(x).padStart(2, '0')}`;
+  };
+
+  function setMinutes(m) {
+    minutes = Math.min(1440, Math.max(1, m));
+    $('#amount').textContent = fmtDur(minutes);
+    $('#range').value = minutes;
+    document.querySelectorAll('.presets button').forEach(b =>
+      b.setAttribute('aria-pressed', String(+b.dataset.min === minutes)));
+  }
+  function setMode(m) {
+    mode = m;
+    document.querySelectorAll('.seg button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.mode === m)));
+    document.querySelectorAll('.mode').forEach(el => el.hidden = el.dataset.for !== m);
+  }
+
+  document.querySelectorAll('.seg button').forEach(b => b.onclick = () => setMode(b.dataset.mode));
+  document.querySelectorAll('.presets button').forEach(b => b.onclick = () => setMinutes(+b.dataset.min));
+  $('#minus').onclick = () => setMinutes(minutes - (minutes > 60 ? 15 : 5));
+  $('#plus').onclick  = () => setMinutes(minutes + (minutes >= 60 ? 15 : 5));
+  $('#range').oninput = e => setMinutes(+e.target.value);
+
+  const untilInput = $('#until');
+  const inAnHour = new Date(Date.now() + 3600e3);
+  untilInput.value = `${String(inAnHour.getHours()).padStart(2, '0')}:${String(inAnHour.getMinutes()).padStart(2, '0')}`;
+
+  function untilTarget() {
+    const [h, m] = (untilInput.value || '').split(':').map(Number);
+    if (Number.isNaN(h) || Number.isNaN(m)) return null;
+    const t = new Date(); t.setHours(h, m, 0, 0);
+    if (t <= Date.now()) t.setDate(t.getDate() + 1);
+    return t - Date.now() > 24 * 3600e3 ? null : t.getTime();
+  }
+
+  function start(asMode) {
+    if (asMode) setMode(asMode);
+    if (mode === 'until') {
+      const t = untilTarget();
+      const hint = $('#until-hint');
+      if (!t || t - Date.now() < 60e3) { hint.textContent = 'Pick a time at least a minute away.'; hint.classList.add('err'); return; }
+      hint.textContent = 'The next time the clock shows this, within 24 hours'; hint.classList.remove('err');
+      endsAt = t;
+    } else {
+      endsAt = mode === 'timer' ? Date.now() + minutes * 60e3 : null;
+    }
+    running = true;
+    $('#idle').hidden = true; $('#running').hidden = false;
+    $('#more').hidden = mode === 'unlimited';
+    body.classList.add('awake-on');
+    render();
+  }
+  function stop() {
+    running = false; endsAt = null;
+    $('#idle').hidden = false; $('#running').hidden = true;
+    body.classList.remove('awake-on');
+    render();
+  }
+
+  function render() {
+    const left = endsAt ? endsAt - Date.now() : null;
+    if (running && left !== null && left <= 0) { stop(); return; }
+    let sub = 'Your Mac sleeps normally.', clock = '∞', bar = '';
+    if (running) {
+      if (left === null) sub = 'Awake until you stop it';
+      else { clock = fmtClock(left); sub = `Awake for ${clock} more`; bar = clock; }
+    }
+    $('#p-sub').textContent = sub;
+    $('#clock').textContent = clock;
+    $('#clock').setAttribute('aria-label', left === null ? 'Unlimited' : clock);
+    $('#bar-left').textContent = bar;
+    $('#pill-text').textContent = running ? 'Awake is on. Nothing sleeps.' : 'Awake is off. Your Mac can sleep mid-task.';
+    $('#pill-btn').textContent = running ? 'Stop' : 'Turn Awake on';
+  }
+
+  $('#start').onclick = () => start();
+  $('#stop').onclick = stop;
+  $('#quit').onclick = stop;
+  $('#more').onclick = () => { if (endsAt) { endsAt += 15 * 60e3; render(); } };
+  $('#pill-btn').onclick = () => running ? stop() : start('unlimited');
+
+  const cupBtn = $('#bar-cup');
+  cupBtn.onclick = () => {
+    $('#try').scrollIntoView({ block: 'center' });
+    cupBtn.setAttribute('aria-expanded', 'true');
+    setTimeout(() => cupBtn.setAttribute('aria-expanded', 'false'), 900);
+  };
+
+  clockTick(); render();
+  setInterval(() => { clockTick(); if (running) render(); }, 1000);
+
+  /* ── copy the Terminal command ── */
+  $('#copy').onclick = async () => {
+    try { await navigator.clipboard.writeText($('#cmd').textContent); $('#copy').textContent = 'Copied'; }
+    catch { $('#copy').textContent = 'Select it'; }
+    setTimeout(() => $('#copy').textContent = 'Copy', 1600);
+  };
+
+  /* ── point downloads at the newest release ── */
+  fetch('https://api.github.com/repos/iota-x/awake/releases/latest')
+    .then(r => r.ok ? r.json() : Promise.reject())
+    .then(rel => {
+      const dmg = (rel.assets || []).find(a => a.name.endsWith('.dmg'));
+      if (!dmg) return;
+      document.querySelectorAll('[data-download]').forEach(a => a.href = dmg.browser_download_url);
+      document.querySelectorAll('[data-dmg-name]').forEach(a => a.textContent = dmg.name);
+      document.querySelectorAll('[data-version]').forEach(s => s.textContent = `Version ${rel.tag_name.replace(/^v/, '')}`);
+    })
+    .catch(() => {});
+})();
+</script>
+</body>
+</html>

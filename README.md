@@ -4,7 +4,7 @@
 
 <p align="center">Keep your Mac awake from the menu bar — timed sessions, closed-lid mode and battery rules. Free and open source.</p>
 
-<p align="center"><a href="https://github.com/iota-x/awake/releases/latest"><b>⬇ Download the latest release</b></a> · macOS 15+ · Apple silicon and Intel</p>
+<p align="center"><a href="https://github.com/iota-x/awake/releases/latest"><b>⬇ Download the latest release</b></a> · <a href="https://iota-x.github.io/awake/">Website</a> · macOS 15+ · Apple silicon and Intel</p>
 
 ---
 
